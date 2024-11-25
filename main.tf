@@ -1,5 +1,4 @@
-# 初めての Terraform 
-# ここでは s3 にプライベートバケットを追加する処理を実行
+# Terraform の設定をリモート状態管理に変更
 
 terraform {
     required_providers {
@@ -9,6 +8,14 @@ terraform {
         }
     }
     required_version = ">= 1.3.0"
+
+    backend "s3" {
+        bucket = "terraform-state-unique-bucket-name-12345"
+        key = "terraform.tfstate"
+        region = "ap-northeast-1"
+        dynamodb_table = "terraform-locks"
+        encrypt = true
+    }
 }
 
 provider "aws" {
@@ -17,6 +24,11 @@ provider "aws" {
 
 resource "aws_s3_bucket" "example" {
     bucket = "terraform-practice-unique-bucket-name-12345"
+
+    tags = {
+        name = "Example S3 Bucket"
+        environment = "Practice"
+    }
 }
 
 resource "aws_s3_bucket_public_access_block" "example" {

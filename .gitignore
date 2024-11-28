@@ -7,3 +7,6 @@ terraform.tfstate.backup
 
 # Terraform cache
 .terraform/
+
+# 環境変数など
+terraform.tfvars

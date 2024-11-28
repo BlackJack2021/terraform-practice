@@ -69,9 +69,18 @@ resource "aws_iam_role_policy" "lambda_policy" {
             {
                 Effect = "Allow",
                 Action = [
-                    "kms:Decrypt"
+                    "kms:Decrypt",
+                    "kms:Encrypt",
+                    "kms:GenerateDataKey",
                 ],
                 Resource = "*"
+            },
+            {
+                Effect = "Allow",
+                Action = [
+                    "s3:GetObject"
+                ],
+                Resource = "arn:aws:s3:::${var.bucket_name}/${var.prefix}/*"
             }
         ]
     })
@@ -93,6 +102,29 @@ resource "aws_lambda_function" "docker_lambda" {
 
     tags = {
         Name = "Practice Doker Lambda"
+        Environment = "Practice"
+    }
+}
+
+# Step Functions の最初に行う doc_ids を取得する処理を追加
+resource "aws_lambda_function" "doc_id_extractor" {
+    function_name = "doc_id_extractor"
+    role = aws_iam_role.lambda_role.arn
+    handler = "doc_id_extractor.handler.lambda_handler"
+    runtime = "python3.12"
+    timeout = 60
+    
+    filename = "${path.module}/doc_id_extractor/doc_id_extractor.zip"
+
+    environment {
+        variables = {
+            BUCKET_NAME = var.bucket_name
+            PREFIX = var.prefix
+        }
+    }
+
+    tags = {
+        Name = "DocID Extractor"
         Environment = "Practice"
     }
 }
@@ -126,7 +158,10 @@ resource "aws_iam_role_policy" "step_functions_policy" {
                 Action = [
                     "lambda:InvokeFunction"
                 ],
-                Resource = aws_lambda_function.docker_lambda.arn
+                Resource = [
+                    aws_lambda_function.docker_lambda.arn,
+                    aws_lambda_function.doc_id_extractor.arn,
+                ]
             }
         ]
     })
@@ -137,12 +172,18 @@ resource "aws_sfn_state_machine" "string_processing_machine" {
     name = "string_processing_machine"
     role_arn = aws_iam_role.step_functions_role.arn
     definition = jsonencode({
-        Comment: "Step Function to process strings sequentially with Lambda",
-        StartAt: "ProcessStrings",
+        Comment: "Step Function to process doc_ids strings sequentially with Lambda",
+        StartAt: "ExtractDocIDs",
         States: {
+            ExtractDocIDs: {
+                Type: "Task",
+                Resource: aws_lambda_function.doc_id_extractor.arn,
+                ResultPath: "$",
+                Next: "ProcessStrings"
+            },
             ProcessStrings: {
                 Type: "Map",
-                ItemsPath: "$.strings",
+                ItemsPath: "$.doc_ids",
                 Parameters: {
                     "input_string.$": "$$.Map.Item.Value"
                 },
